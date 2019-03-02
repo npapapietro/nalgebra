@@ -1,23 +1,65 @@
+use alga::general::{ClosedAdd, ClosedMul, Real, SubsetOf};
+use base::allocator::Allocator;
+use base::storage::Storage;
+use base::{DefaultAllocator, Dim, DimName, MatrixN, VectorN};
 use num_complex::Complex;
-use alga::general::{ClosedAdd};
-use std::ops::{Add, AddAssign};
-use base::Scalar;
 
-impl<T, Right> ClosedAdd<Right> for Complex<T>
-where T : Real + Scalar + Add<Right, Output = T> + AddAssign<Right>
+///
+#[derive(Clone, Debug)]
+pub struct FourierTransform<N, D>
+where
+    N: Real,
+    D: Dim,
+    DefaultAllocator: Allocator<N, D, D>
+        + Allocator<N, D>
+        + Allocator<Complex<N>, D>
+        + Allocator<Complex<N>, D, D>,
 {
+    ///
+    pub v: VectorN<N, D>,
+    ///
+    pub z: VectorN<Complex<N>, D>,
+    m: MatrixN<Complex<N>, D>,
 }
 
-pub fn fourier_transform_matrix<N: Real>(size: usize) -> DMatrix<Complex<N>> {
-    let mut mat = DMatrix::<Complex<N>>::zeros(size, size);
-
-    for i in 0..size {
-        for j in 0..i {
-            let arg =  N::pi() * convert(2.0f64) * convert(i as f64) * convert(j as f64) / convert(size as f64);
-            mat[(i, j)] = Complex::new(N::cos(arg), -N::sin(arg));
-        }
+impl<N, D> FourierTransform<N, D>
+where
+    N: Real,
+    D: DimName,
+    usize: SubsetOf<N>,
+    N: SubsetOf<Complex<N>>,
+    Complex<N>: ClosedMul + ClosedAdd,
+    MatrixN<Complex<N>, D>: ClosedMul,
+    DefaultAllocator: Allocator<N, D, D>
+        + Allocator<N, D>
+        + Allocator<Complex<N>, D>
+        + Allocator<Complex<N>, D, D>,
+{
+    ///
+    pub fn new(v: VectorN<N, D>) -> Self {
+        let (nrows, _) = v.data.shape();
+        let m = MatrixN::<Complex<N>, D>::from_fn(|i, j| {
+            Complex::new(
+                N::cos(N::two_pi() * ::convert(i) * ::convert(j) / ::convert(nrows.value())),
+                -N::sin(N::two_pi() * ::convert(i) * ::convert(j) / ::convert(nrows.value())),
+            )
+        });
+        let z: VectorN<Complex<N>, D> = ::convert(v.clone());
+        Self { v: v, m: m, z: z }
     }
-    mat = (mat + mat.transpose()) / convert(2.0f64);
 
-    return mat;
+    ///
+    pub fn as_real(&self) -> VectorN<N, D> {
+        VectorN::<N, D>::from_fn(|i, _| self.z.dot(&self.m.row(i).transpose()).re)
+    }
+
+    ///
+    pub fn as_complex(&self) -> VectorN<Complex<N>, D> {
+        VectorN::<Complex<N>, D>::from_fn(|i, _| self.z.dot(&self.m.row(i).transpose()))
+    }
+
+    ///
+    pub fn as_imag(&self) -> VectorN<N, D> {
+        VectorN::<N, D>::from_fn(|i, _| self.z.dot(&self.m.row(i).transpose()).im)
+    }
 }
